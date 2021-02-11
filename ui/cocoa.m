@@ -391,6 +391,14 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     }
 }
 
+- (NSSize) computeUnzoomedSize
+{
+    CGFloat width = screen.width / [[self window] backingScaleFactor];
+    CGFloat height = screen.height / [[self window] backingScaleFactor];
+
+    return NSMakeSize(width, height);
+}
+
 - (NSSize) fixZoomedFullScreenSize:(NSSize)proposedSize
 {
     NSSize size;
@@ -423,7 +431,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     [[self window] setContentAspectRatio:NSMakeSize(screen.width, screen.height)];
 
     if (([[self window] styleMask] & NSWindowStyleMaskResizable) == 0) {
-        [[self window] setContentSize:NSMakeSize(screen.width, screen.height)];
+        [[self window] setContentSize:[self computeUnzoomedSize]];
         [[self window] center];
     } else if (([[self window] styleMask] & NSWindowStyleMaskFullScreen) != 0) {
         [[self window] setContentSize:[self fixZoomedFullScreenSize:[self screenSafeAreaSize]]];
@@ -472,10 +480,12 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         info.height_mm = 0;
     }
 
+    NSSize frameBackingSize = [self convertSizeToBacking:frameSize];
+
     info.xoff = 0;
     info.yoff = 0;
-    info.width = frameSize.width;
-    info.height = frameSize.height;
+    info.width = frameBackingSize.width;
+    info.height = frameBackingSize.height;
 
     dpy_set_ui_info(dcl.con, &info, TRUE);
 }
@@ -1183,7 +1193,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 - (NSSize) window:(NSWindow *)window willUseFullScreenContentSize:(NSSize)proposedSize
 {
     if (([normalWindow styleMask] & NSWindowStyleMaskResizable) == 0) {
-        return NSMakeSize([cocoaView gscreen].width, [cocoaView gscreen].height);
+        return [cocoaView computeUnzoomedSize];
     }
 
     return [cocoaView fixZoomedFullScreenSize:proposedSize];
