@@ -114,13 +114,11 @@ static void dbus_scanout_dmabuf(DisplayChangeListener *dcl,
         NULL, NULL, NULL);
 }
 
-static void dbus_scanout_texture(DisplayChangeListener *dcl,
-                                 uint32_t tex_id,
-                                 bool backing_y_0_top,
-                                 uint32_t backing_width,
-                                 uint32_t backing_height,
-                                 uint32_t x, uint32_t y,
-                                 uint32_t w, uint32_t h)
+static void dbus_scanout_borrowed_texture(DisplayChangeListener *dcl,
+                                          uint32_t tex_id,
+                                          bool backing_y_0_top,
+                                          uint32_t backing_width,
+                                          uint32_t backing_height)
 {
     QemuDmaBuf dmabuf = {
         .width = backing_width,
@@ -140,6 +138,22 @@ static void dbus_scanout_texture(DisplayChangeListener *dcl,
 
     dbus_scanout_dmabuf(dcl, &dmabuf);
     close(dmabuf.fd);
+}
+
+static void dbus_scanout_texture(DisplayChangeListener *dcl,
+                                 uint32_t backing_id,
+                                 DisplayGLTextureBorrower backing_borrow,
+                                 uint32_t x, uint32_t y,
+                                 uint32_t w, uint32_t h)
+{
+    bool backing_y_0_top;
+    uint32_t backing_width;
+    uint32_t backing_height;
+    uint32_t tex_id = backing_borrow(backing_id, &backing_y_0_top,
+                                     &backing_width, &backing_height);
+
+    dbus_scanout_borrowed_texture(dcl, tex_id, backing_y_0_top,
+                                  backing_width, backing_height);
 }
 
 static void dbus_cursor_dmabuf(DisplayChangeListener *dcl,
@@ -307,8 +321,8 @@ static void dbus_gl_gfx_switch(DisplayChangeListener *dcl,
         int height = surface_height(ddl->ds);
 
         /* TODO: lazy send dmabuf (there are unnecessary sent otherwise) */
-        dbus_scanout_texture(&ddl->dcl, ddl->ds->texture, false,
-                             width, height, 0, 0, width, height);
+        dbus_scanout_borrowed_texture(&ddl->dcl, ddl->ds->texture, false,
+                                      width, height);
     }
 }
 

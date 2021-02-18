@@ -89,6 +89,7 @@ typedef struct CocoaListener {
     int mouse_on;
 #ifdef CONFIG_OPENGL
     uint32_t gl_scanout_id;
+    DisplayGLTextureBorrower gl_scanout_borrow;
     bool gl_scanout_y0_top;
 #endif
 } CocoaListener;
@@ -2315,12 +2316,16 @@ static void cocoa_gl_refresh(DisplayChangeListener *dcl)
         with_view_ctx(^{
             NSSize size = [cocoaView convertSizeToBacking:[cocoaView frame].size];
 
-            if (listener->gl_scanout_id) {
+            if (listener->gl_scanout_borrow) {
+                bool y0_top;
+                GLint texture =
+                    listener->gl_scanout_borrow(listener->gl_scanout_id,
+                                                &y0_top, NULL, NULL);
+
                 glBindFramebuffer(GL_FRAMEBUFFER_EXT, 0);
                 glViewport(0, 0, size.width, size.height);
-                glBindTexture(GL_TEXTURE_2D, active_listener->gl_scanout_id);
-                qemu_gl_run_texture_blit(dgc.gls,
-                                         active_listener->gl_scanout_y0_top);
+                glBindTexture(GL_TEXTURE_2D, texture);
+                qemu_gl_run_texture_blit(dgc.gls, y0_top);
             } else {
                 surface_gl_setup_viewport(dgc.gls, surface,
                                           size.width, size.height);
@@ -2338,7 +2343,7 @@ static void cocoa_gl_scanout_disable(DisplayChangeListener *dcl)
 {
     CocoaListener *listener = container_of(dcl, CocoaListener, dcl);
 
-    listener->gl_scanout_id = 0;
+    listener->gl_scanout_borrow = NULL;
 
     if (listener == active_listener) {
         gl_dirty = surface != NULL;
@@ -2379,16 +2384,14 @@ static void cocoa_gl_cursor_define(DisplayChangeListener *dcl, QEMUCursor *curso
 
 static void cocoa_gl_scanout_texture(DisplayChangeListener *dcl,
                                      uint32_t backing_id,
-                                     bool backing_y_0_top,
-                                     uint32_t backing_width,
-                                     uint32_t backing_height,
+                                     DisplayGLTextureBorrower backing_borrow,
                                      uint32_t x, uint32_t y,
                                      uint32_t w, uint32_t h)
 {
     CocoaListener *listener = container_of(dcl, CocoaListener, dcl);
 
     listener->gl_scanout_id = backing_id;
-    listener->gl_scanout_y0_top = backing_y_0_top;
+    listener->gl_scanout_borrow = backing_borrow;
     gl_dirty = true;
 }
 
