@@ -1139,14 +1139,13 @@ if not get_option('coreaudio').auto() or (targetos == 'darwin' and have_system)
                          required: get_option('coreaudio'))
 endif
 
+egl = not_found
 opengl = not_found
 if not get_option('opengl').auto() or have_system or have_vhost_user_gpu
-  epoxy = dependency('epoxy', method: 'pkg-config',
+  opengl = dependency('epoxy', method: 'pkg-config',
                       required: get_option('opengl'), kwargs: static_kwargs)
-  if cc.has_header('epoxy/egl.h', dependencies: epoxy)
-    opengl = epoxy
-  elif get_option('opengl').enabled()
-    error('epoxy/egl.h not found')
+  if cc.has_header('epoxy/egl.h', dependencies: opengl)
+    egl = opengl
   endif
 endif
 gbm = not_found
@@ -1871,6 +1870,7 @@ if numa.found()
                        cc.has_function('numa_has_preferred_many',
                                        dependencies: numa))
 endif
+config_host_data.set('CONFIG_EGL', egl.found())
 config_host_data.set('CONFIG_OPENGL', opengl.found())
 config_host_data.set('CONFIG_PROFILER', get_option('profiler'))
 config_host_data.set('CONFIG_RBD', rbd.found())
