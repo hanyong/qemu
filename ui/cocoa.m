@@ -242,6 +242,14 @@ static CGRect compute_cursor_clip_rect(int screen_height,
 {
     NSTrackingArea *trackingArea;
     QEMUScreen screen;
+    /* The state surrounding mouse grabbing is potentially confusing.
+     * isAbsoluteEnabled tracks qemu_input_is_absolute() [ie "is the emulated
+     *   pointing device an absolute-position one?"], but is only updated on
+     *   next refresh.
+     * isMouseGrabbed tracks whether GUI events are directed to the guest;
+     *   it controls whether special keys like Cmd get sent to the guest,
+     *   and whether we capture the mouse when in non-absolute mode.
+     */
     BOOL isMouseGrabbed;
     BOOL isAbsoluteEnabled;
     CFMachPortRef eventsTap;
@@ -252,17 +260,8 @@ static CGRect compute_cursor_clip_rect(int screen_height,
 - (void) handleMonitorInput:(NSEvent *)event;
 - (bool) handleEvent:(NSEvent *)event;
 - (bool) handleEventLocked:(NSEvent *)event;
-- (void) setAbsoluteEnabled:(BOOL)tIsAbsoluteEnabled;
-/* The state surrounding mouse grabbing is potentially confusing.
- * isAbsoluteEnabled tracks qemu_input_is_absolute() [ie "is the emulated
- *   pointing device an absolute-position one?"], but is only updated on
- *   next refresh.
- * isMouseGrabbed tracks whether GUI events are directed to the guest;
- *   it controls whether special keys like Cmd get sent to the guest,
- *   and whether we capture the mouse when in non-absolute mode.
- */
+- (void) notifyMouseModeChange;
 - (BOOL) isMouseGrabbed;
-- (BOOL) isAbsoluteEnabled;
 - (void) raiseAllKeys;
 @end
 
@@ -375,6 +374,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         cocoa_switch(&active_listener->dcl, new_surface);
     }
 
+    [self notifyMouseModeChange];
     [self updateUIInfoLocked];
 }
 
@@ -1106,14 +1106,26 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     [self raiseAllButtons];
 }
 
-- (void) setAbsoluteEnabled:(BOOL)tIsAbsoluteEnabled {
+- (void) notifyMouseModeChange {
+    bool tIsAbsoluteEnabled = bool_with_iothread_lock(^{
+        return qemu_input_is_absolute(active_listener->dcl.con);
+    });
+
+    if (tIsAbsoluteEnabled == isAbsoluteEnabled) {
+        return;
+    }
+
     isAbsoluteEnabled = tIsAbsoluteEnabled;
+
     if (isMouseGrabbed) {
-        CGAssociateMouseAndMouseCursorPosition(isAbsoluteEnabled);
+        if (isAbsoluteEnabled) {
+            [self ungrabMouse];
+        } else {
+            CGAssociateMouseAndMouseCursorPosition(isAbsoluteEnabled);
+        }
     }
 }
 - (BOOL) isMouseGrabbed {return isMouseGrabbed;}
-- (BOOL) isAbsoluteEnabled {return isAbsoluteEnabled;}
 
 /*
  * Makes the target think all down keys are being released.
@@ -1783,6 +1795,17 @@ static void addRemovableDevicesMenuItems(void)
     qapi_free_BlockInfoList(pointerToFree);
 }
 
+static void cocoa_mouse_mode_change_notify(Notifier *notifier, void *data)
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [cocoaView notifyMouseModeChange];
+    });
+}
+
+static Notifier mouse_mode_change_notifier = {
+    .notify = cocoa_mouse_mode_change_notify
+};
+
 @interface QemuCocoaPasteboardTypeOwner : NSObject<NSPasteboardTypeOwner>
 @end
 
@@ -1997,17 +2020,6 @@ static void cocoa_refresh(DisplayChangeListener *dcl)
     }
 
     graphic_hw_update(dcl->con);
-
-    if (qemu_input_is_absolute(dcl->con)) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (![cocoaView isAbsoluteEnabled]) {
-                if ([cocoaView isMouseGrabbed]) {
-                    [cocoaView ungrabMouse];
-                }
-            }
-            [cocoaView setAbsoluteEnabled:YES];
-        });
-    }
 
     if (cbchangecount != [[NSPasteboard generalPasteboard] changeCount]) {
         qemu_clipboard_info_unref(cbinfo);
@@ -2551,6 +2563,9 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
         }
 
         kbd = qkbd_state_init(active_listener->dcl.con);
+
+        qemu_add_mouse_mode_change_notifier(&mouse_mode_change_notifier);
+        [cocoaView notifyMouseModeChange];
     }
 
     create_initial_menus();
