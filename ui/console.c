@@ -2212,6 +2212,18 @@ void graphic_console_close(QemuConsole *con)
     dpy_gfx_replace_surface(con, surface);
 }
 
+QemuConsole *qemu_console_lookup_first_graphic_console(void)
+{
+    QemuConsole *con;
+
+    QTAILQ_FOREACH(con, &consoles, next) {
+        if (con->console_type == GRAPHIC_CONSOLE) {
+            return con;
+        }
+    }
+    return NULL;
+}
+
 QemuConsole *qemu_console_lookup_by_index(unsigned int index)
 {
     QemuConsole *con;
