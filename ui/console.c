@@ -1225,32 +1225,6 @@ static void displaychangelistener_display_console(DisplayChangeListener *dcl,
     }
 }
 
-void console_select(unsigned int index)
-{
-    DisplayChangeListener *dcl;
-    QemuConsole *s;
-
-    trace_console_select(index);
-    s = qemu_console_lookup_by_index(index);
-    if (s) {
-        DisplayState *ds = s->ds;
-
-        active_console = s;
-        if (ds->have_gfx) {
-            QLIST_FOREACH(dcl, &ds->listeners, next) {
-                if (dcl->con != NULL) {
-                    continue;
-                }
-                displaychangelistener_display_console(dcl, s, NULL);
-            }
-        }
-        if (ds->have_text) {
-            dpy_text_resize(s, s->width, s->height);
-        }
-        text_console_update_cursor(NULL);
-    }
-}
-
 struct VCChardev {
     Chardev parent;
     QemuConsole *console;
@@ -1403,11 +1377,6 @@ void kbd_put_string_console(QemuConsole *s, const char *str, int len)
     for (i = 0; i < len && str[i]; i++) {
         kbd_put_keysym_console(s, str[i]);
     }
-}
-
-void kbd_put_keysym(int keysym)
-{
-    kbd_put_keysym_console(active_console, keysym);
 }
 
 static void text_console_invalidate(void *opaque)
@@ -1661,6 +1630,9 @@ void register_displaychangelistener(DisplayChangeListener *dcl)
         con = active_console;
     }
     displaychangelistener_display_console(dcl, con, dcl->con ? &error_fatal : NULL);
+    if (dcl->ds->have_text) {
+        dpy_text_resize(dcl->con, dcl->con->width, dcl->con->height);
+    }
     text_console_update_cursor(NULL);
 }
 
