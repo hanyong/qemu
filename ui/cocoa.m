@@ -1326,16 +1326,6 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     [cocoaView raiseAllKeys];
 }
 
-- (void)windowDidBecomeKey:(NSNotification *)notification
-{
-    /* If we became key and are fullscreen there is no point in waiting for
-     * a click to grab the mouse.
-     */
-    if (([[cocoaView window] styleMask] & NSWindowStyleMaskFullScreen) != 0) {
-        [cocoaView grabMouse];
-    }
-}
-
 /* We abstract the method called by the Enter Fullscreen menu item
  * because Mac OS 10.7 and higher disables it. This is because of the
  * menu item's old selector's name toggleFullScreen:
